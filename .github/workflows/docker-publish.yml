@@ -35,13 +35,12 @@ jobs:
         run: docker build -t "$IMAGE_NAME:ci" .
 
       - name: Start test container
-        run: |
-          docker run -d --name student-result-ci -p 5000:5000 "$IMAGE_NAME:ci"
+        run: docker run -d --name student-result-ci -p 8000:8000 "$IMAGE_NAME:ci"
 
       - name: Test API health endpoint
         run: |
           for attempt in {1..20}; do
-            if curl --fail --silent http://localhost:5000/health; then
+            if curl --fail --silent http://localhost:8000/health; then
               echo "Health check passed."
               exit 0
             fi
@@ -52,10 +51,13 @@ jobs:
           docker logs student-result-ci
           exit 1
 
+      - name: Test Swagger documentation
+        run: curl --fail --silent http://localhost:8000/docs | grep -q 'Swagger UI'
+
       - name: Test prediction endpoint
         run: |
           response=$(curl --fail --silent --show-error \
-            -X POST http://localhost:5000/predict \
+            -X POST http://localhost:8000/predict \
             -H "Content-Type: application/json" \
             --data '{"attendance":90,"internal_marks":85,"assignment_marks":88,"previous_score":80}')
           echo "$response"
