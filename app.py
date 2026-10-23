@@ -1,14 +1,22 @@
-"""Flask API for the Student Result Prediction model."""
+"""FastAPI service for the Student Result Prediction model."""
 from pathlib import Path
+from typing import Annotated
 import joblib
 import pandas as pd
-from flask import Flask, jsonify, request
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel, Field
 
 ROOT = Path(__file__).resolve().parent
 MODEL_PATH = ROOT / "student_result_model.pkl"
 FEATURES = ["attendance", "internal_marks", "assignment_marks", "previous_score"]
-app = Flask(__name__)
+app = FastAPI(title="Student Result Prediction API", version="1.0.0")
 _model = None
+
+class PredictionRequest(BaseModel):
+    attendance: float = Field(ge=0, le=100)
+    internal_marks: float = Field(ge=0, le=100)
+    assignment_marks: float = Field(ge=0, le=100)
+    previous_score: float = Field(ge=0, le=100)
 
 def load_model():
     global _model
@@ -20,35 +28,18 @@ def load_model():
 
 @app.get("/")
 def index():
-    return jsonify({"service": "student-result-prediction", "status": "running"})
+    return {"service": "student-result-prediction", "status": "running"}
 
 @app.get("/health")
 def health():
     try:
         load_model()
-        return jsonify({"status": "healthy"}), 200
+        return {"status": "healthy"}
     except Exception as exc:
-        return jsonify({"status": "unhealthy", "reason": str(exc)}), 503
+        raise HTTPException(status_code=503, detail=f"Model unavailable: {exc}")
 
 @app.post("/predict")
-def predict():
-    payload = request.get_json(silent=True)
-    if not isinstance(payload, dict):
-        return jsonify({"error": "Request body must be a JSON object."}), 400
-    missing = [key for key in FEATURES if key not in payload]
-    if missing:
-        return jsonify({"error": "Missing required fields.", "missing_fields": missing}), 400
-    try:
-        values = {key: float(payload[key]) for key in FEATURES}
-    except (TypeError, ValueError):
-        return jsonify({"error": "All input values must be numeric."}), 400
-    if any(value < 0 or value > 100 for value in values.values()):
-        return jsonify({"error": "All input values must be between 0 and 100."}), 400
-    try:
-        prediction = int(load_model().predict(pd.DataFrame([values], columns=FEATURES))[0])
-    except Exception:
-        return jsonify({"error": "Prediction failed."}), 500
-    return jsonify({"prediction": "PASS" if prediction == 1 else "FAIL", "prediction_code": prediction})
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+def predict(payload: PredictionRequest):
+    values = payload.model_dump()
+    prediction = int(load_model().predict(pd.DataFrame([values], columns=FEATURES))[0])
+    return {"prediction": "PASS" if prediction == 1 else "FAIL", "prediction_code": prediction}
